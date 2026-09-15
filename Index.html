@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Enterprise Expense Dashboard</title>
+  <!-- Bootstrap CSS for layout/utility enhancements -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,1,0" rel="stylesheet" />
+  <?!= include('Style'); ?>
+  <script>
+      function togglePassword(inputId, btn) {
+        const input = document.getElementById(inputId);
+        const icon = btn.querySelector('span');
+        if (input.type === 'password') {
+          input.type = 'text';
+          icon.textContent = 'visibility_off';
+        } else {
+          input.type = 'password';
+          icon.textContent = 'visibility';
+        }
+      }
+  </script>
+</head>
+<body>
+  <div id="loginContainer" class="login-wrapper">
+    <div class="login-card shadow-card-custom">
+      <div class="login-header">
+        <div class="logo-container shadow-sm">
+          <!-- Expense Management Login Logo (Responsive SVG) -->
+          <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" style="width: 50px; height: 50px;">
+            <path d="M6 25L14 15L20 21L31 8" stroke="var(--primary-color)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M22 8H31V17" stroke="var(--primary-color)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <rect x="22" y="22" width="16" height="16" rx="8" fill="var(--success-color)" stroke="var(--primary-light)" stroke-width="3"/>
+            <path d="M26 30L28.5 32.5L34 26" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <h2>Expense Portal</h2>
+        <p>Secure Enterprise Access</p>
+      </div>
+      
+      <form id="loginForm">
+        <div class="form-group">
+          <label>Username</label>
+          <input type="text" id="loginUsername" class="form-control input-dark-border shadow-input-custom" required autocomplete="username" placeholder="Enter username">
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <div class="input-group shadow-input-custom input-dark-border" style="border-radius: var(--radius-sm); overflow: hidden;">
+            <input type="password" id="loginPassword" class="form-control" style="border: none !important; box-shadow: none !important;" required autocomplete="current-password" placeholder="Enter password">
+            <button type="button" class="icon-btn" onclick="togglePassword('loginPassword', this)">
+              <span class="material-symbols-outlined">visibility</span>
+            </button>
+          </div>
+        </div>
+        <button type="submit" id="btnLogin" class="btn btn-primary shadow-btn-custom w-100 mt-4 py-2" style="font-weight:600;">
+          <span class="btn-text">Submit</span>
+          <span class="loader hidden"></span>
+        </button>
+        <div id="loginError" class="error-banner" style="display: none;"></div>
+      </form>
+    </div>
+  </div>
+
+  <div id="dashboardContainer" class="dashboard-layout" style="display: none;">
+    
+    <header class="topbar shadow-header">
+      <div class="topbar-left">
+        <div class="topbar-title d-flex align-items-center gap-2">
+          <!-- Expense Management Topbar Logo (Responsive SVG) -->
+          <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" style="width: 30px; height: 30px; flex-shrink: 0;">
+            <rect width="40" height="40" rx="8" fill="var(--primary-color)"/>
+            <path d="M9 25L16 16L22 21L31 9" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M23 9H31V17" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            <rect x="22" y="22" width="16" height="16" rx="8" fill="var(--success-color)" stroke="var(--primary-color)" stroke-width="2.5"/>
+            <path d="M26 30L28.5 32.5L34 26" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <h1 class="mb-0">EXPENSE<span class="fw-light">Management</span></h1>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <span class="time-display shadow-sm" id="currentTime">12:00</span>
+        <div class="user-menu-container">
+          <button type="button" class="profile-btn shadow-sm" id="userMenuBtn" title="Account Options">
+            <span class="material-symbols-outlined">person</span>
+          </button>
+          <div class="user-dropdown shadow-card-custom" id="userDropdown">
+            <div class="dropdown-header">
+              <span id="loggedInUserNameDisplay">User</span>
+            </div>
+            <button type="button" class="dropdown-item" id="btnLogout">
+              <span class="material-symbols-outlined">logout</span> Secure Logout
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="content">
+      
+      <nav class="tabs-container">
+        <button type="button" class="tab-btn active" data-target="tabEntry">
+          <span class="material-symbols-outlined">edit_document</span> 
+          <span>Data Entry</span>
+        </button>
+        <button type="button" class="tab-btn" data-target="tabReport">
+          <span class="material-symbols-outlined">insert_chart</span> 
+          <span>Reports</span>
+        </button>
+        <button type="button" class="tab-btn admin-only" data-target="tabAdmin" style="display: none;">
+          <span class="material-symbols-outlined">shield_person</span> 
+          <span>Admin</span>
+        </button>
+      </nav>
+
+      <div id="tabEntry" class="tab-content active">
+        
+        <div id="delegatePanel" class="card shadow-card-custom table-dark-border delegate-panel mb-4" style="display: none;">
+          <div class="card-info-banner delegate-banner border-bottom">
+            <span class="material-symbols-outlined info-icon delegate-icon">admin_panel_settings</span>
+            <span>Super Admin Context Active</span>
+          </div>
+          <div class="delegate-content p-4">
+            <div class="filter-group flex-grow-1">
+              <label class="fw-bold mb-2">Target Employee Profile</label>
+              <select id="delegateEmployee" class="form-select input-dark-border shadow-input-custom">
+                <option value="" disabled selected>Select Profile...</option>
+              </select>
+            </div>
+            <button type="button" id="btnConfirmDelegate" class="btn btn-primary shadow-btn-custom">Load Context</button>
+            <div id="displaySelectedDelegate" class="delegate-display shadow-sm"></div>
+          </div>
+        </div>
+
+        <div id="expenseEntryWrapper" class="d-flex flex-column flex-grow-1">
+          <div class="card shadow-card-custom border-0 flex-grow-1 mb-4">
+            <div class="card-info-banner bg-light-primary border-bottom border-secondary-subtle">
+              <span class="material-symbols-outlined info-icon text-primary">info</span>
+              <span>Document upload is strictly mandatory if GST > 0.</span>
+            </div>
+            <form id="expenseForm">
+              <div class="table-header-bar border-bottom">
+                <div class="total-display">
+                  Gross Total <span id="totalAmount" class="shadow-sm border-dark">0.00</span>
+                </div>
+              </div>
+              <div class="table-responsive shadow-sm">
+                <table class="table table-hover align-middle mb-0 excel-table table-dark-border" id="expenseTable">
+                  <thead>
+                    <tr>
+                      <th class="col-sl">ID</th>
+                      <th>NAME <span class="required">*</span></th>
+                      <th>TRAVEL DAY <span class="required">*</span></th>
+                      <th>CUSTOMER NAME <span class="required">*</span></th>
+                      <th>STARTING POINT</th>
+                      <th>ENDING POINT</th>
+                      <th>MODE OF TRAVEL</th>
+                      <th>LOCATION <span class="required">*</span></th>
+                      <th>TRAVEL COST</th>
+                      <th>FOODING COST</th>
+                      <th>OTHER EXPENSE</th>
+                      <th>EQUIPMENT TRANS.</th>
+                      <th>MATERIAL PURCH.</th>
+                      <th>GST VALUE</th>
+                      <th>REMARKS</th>
+                      <th>REMARKS (OTHER)</th>
+                      <th>DOCUMENT</th>
+                      <th class="col-action"><span class="material-symbols-outlined">settings</span></th>
+                    </tr>
+                  </thead>
+                  <tbody id="gridBody">
+                  </tbody>
+                </table>
+              </div>
+              <div class="form-actions border-top">
+                <div class="action-left">
+                  <button type="button" id="btnAddRow" class="btn btn-secondary shadow-btn-custom" disabled>
+                    <span class="material-symbols-outlined">add</span> Add Row
+                  </button>
+                </div>
+                <div class="action-right d-flex gap-2">
+                  <button type="button" id="btnReset" class="btn btn-outline-danger shadow-btn-custom" disabled>Clear</button>
+                  <button type="submit" id="btnSubmit" class="btn btn-primary shadow-btn-custom" disabled>
+                    <span class="btn-text">Submit Ledger</span>
+                    <span class="loader hidden"></span>
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div id="tabReport" class="tab-content">
+        <div class="card shadow-card-custom border-0 mb-4">
+          
+          <div class="filter-panel border-bottom p-4">
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label class="fw-bold mb-2" style="font-size: 12px; color: var(--text-secondary); text-transform: uppercase;">Profile Filter</label>
+                <select id="filterEmployee" class="form-select input-dark-border shadow-input-custom">
+                  <option value="All Employees">All Employees</option>
+                </select>
+                <div id="readOnlyEmployee" class="readonly-display shadow-sm" style="display:none;"></div>
+              </div>
+              <div class="col-md-4">
+                <label class="fw-bold mb-2" style="font-size: 12px; color: var(--text-secondary); text-transform: uppercase;">Period Start <span class="required">*</span></label>
+                <input type="date" id="filterFromDate" class="form-control input-dark-border shadow-input-custom">
+              </div>
+              <div class="col-md-4">
+                <label class="fw-bold mb-2" style="font-size: 12px; color: var(--text-secondary); text-transform: uppercase;">Period End <span class="required">*</span></label>
+                <input type="date" id="filterToDate" class="form-control input-dark-border shadow-input-custom">
+              </div>
+            </div>
+            
+            <div class="filter-actions mt-4">
+              <button type="button" id="btnSearchReport" class="btn btn-primary shadow-btn-custom">
+                <span class="btn-text d-flex align-items-center gap-2"><span class="material-symbols-outlined">search</span> Analyze</span>
+                <span class="loader hidden"></span>
+              </button>
+              <button type="button" id="btnResetReport" class="btn btn-outline-secondary shadow-btn-custom">Reset</button>
+              
+              <div class="ai-actions-group">
+                <button type="button" id="btnExportPDF" class="btn btn-secondary shadow-btn-custom" disabled>
+                  <span class="btn-text d-flex align-items-center gap-2"><span class="material-symbols-outlined">picture_as_pdf</span> PDF</span>
+                  <span class="loader hidden"></span>
+                </button>
+                <button type="button" id="btnExportCSV" class="btn btn-secondary shadow-btn-custom admin-only" disabled style="display: none;">
+                  <span class="btn-text d-flex align-items-center gap-2"><span class="material-symbols-outlined">download</span> CSV</span>
+                  <span class="loader hidden"></span>
+                </button>
+                <button type="button" id="btnAuditExpenses" class="btn btn-ai shadow-btn-custom admin-only" disabled style="display: none;">
+                  <span class="btn-text d-flex align-items-center gap-2"><span class="material-symbols-outlined">psychology</span> Audit</span>
+                  <span class="loader hidden"></span>
+                </button>
+                <button type="button" id="btnPredictCashFlow" class="btn btn-forecast shadow-btn-custom admin-only" disabled style="display: none;">
+                  <span class="btn-text d-flex align-items-center gap-2"><span class="material-symbols-outlined">trending_up</span> Forecast</span>
+                  <span class="loader hidden"></span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div id="aiInsightContainer" class="ai-box shadow-sm" style="display: none;">
+            <div class="ai-title"><span class="material-symbols-outlined">auto_awesome</span> Intelligence Report</div>
+            <div class="ai-text" id="aiInsightText"></div>
+          </div>
+
+          <div class="summary-panel p-4" id="reportSummaryPanel" style="display: none;">
+            <div class="summary-box summary-highlight shadow-sm table-dark-border">
+              <span>Grand Total</span>
+              <strong id="repGrandTotal">0.00</strong>
+            </div>
+            <div class="summary-box shadow-sm table-dark-border">
+              <span>Transport</span>
+              <strong id="repTravel">0.00</strong>
+            </div>
+            <div class="summary-box shadow-sm table-dark-border">
+              <span>Fooding</span>
+              <strong id="repFood">0.00</strong>
+            </div>
+            <div class="summary-box shadow-sm table-dark-border">
+              <span>Others</span>
+              <strong id="repOther">0.00</strong>
+            </div>
+            <div class="summary-box shadow-sm table-dark-border">
+              <span>Equipment</span>
+              <strong id="repEquip">0.00</strong>
+            </div>
+            <div class="summary-box shadow-sm table-dark-border">
+              <span>Materials</span>
+              <strong id="repMaterial">0.00</strong>
+            </div>
+            <div class="summary-box shadow-sm table-dark-border">
+              <span>Total GST</span>
+              <strong id="repGst">0.00</strong>
+            </div>
+            <div class="summary-box count-box shadow-sm table-dark-border">
+              <span>Entries</span>
+              <strong id="repCount">0</strong>
+            </div>
+          </div>
+
+          <div class="table-responsive report-responsive">
+            <table class="table table-hover align-middle mb-0 excel-table report-table table-dark-border" id="reportTable">
+              <thead>
+                <!-- Headers are injected dynamically by JavaScript depending on Admin/User mode -->
+              </thead>
+              <tbody id="reportGridBody">
+                <tr>
+                  <td colspan="20" class="empty-state">
+                    <div class="empty-icon shadow-sm"><span class="material-symbols-outlined">data_usage</span></div>
+                    Configure period bounds and execute analysis.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div id="tabAdmin" class="tab-content admin-only" style="display: none;">
+          <div class="admin-grid">
+              <div class="card shadow-card-custom border-0 mb-4">
+                  <div class="card-info-banner flex-between border-bottom p-4">
+                      <div class="flex-align-center gap-2">
+                        <span class="material-symbols-outlined text-primary">security</span>
+                        <span class="fw-bold">Access Control Registry</span>
+                      </div>
+                      <button type="button" class="btn btn-primary btn-sm shadow-btn-custom" id="btnAddUser">
+                          <span class="material-symbols-outlined">person_add</span> Add Employee
+                      </button>
+                  </div>
+                  <div class="table-responsive" style="max-height: 60vh;">
+                      <table class="table table-hover align-middle mb-0 excel-table table-dark-border" id="usersTable">
+                          <thead>
+                              <tr>
+                                  <th>USER ID</th>
+                                  <th>CREDENTIAL</th>
+                                  <th>REGISTERED EMAIL</th>
+                                  <th class="col-action">ACTIONS</th>
+                              </tr>
+                          </thead>
+                          <tbody id="usersGridBody">
+                              <tr><td colspan="4" class="empty-state"><span class="loader"></span></td></tr>
+                          </tbody>
+                      </table>
+                  </div>
+              </div>
+          </div>
+      </div>
+
+    </main>
+  </div>
+
+  <div id="vehicleKmModal" class="modal glass-modal">
+    <div class="modal-card shadow-modal-custom table-dark-border">
+        <div class="modal-header border-bottom">
+            <div>
+              <h3 class="mb-1">Vehicle Logistics</h3>
+              <p class="modal-subtitle mb-0">Record transit distance</p>
+            </div>
+            <button type="button" class="icon-btn modal-close" id="closeVehicleModal">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+        <div class="modal-body p-4">
+            <div class="form-group mb-0">
+                <label class="fw-bold mb-2" style="font-size: 12px; color: var(--text-secondary); text-transform: uppercase;">Distance Travelled (KM) <span class="required">*</span></label>
+                <div class="input-with-suffix">
+                  <input type="number" id="vehicleKmInput" class="form-control input-dark-border shadow-input-custom" min="0.1" step="0.1" placeholder="0.0" required autocomplete="off">
+                  <span class="suffix">KM</span>
+                </div>
+            </div>
+            <div id="vehicleKmError" class="alert alert-danger mt-3 mb-0 shadow-sm" style="display: none; padding: 10px; font-size: 13px;">
+                Please enter a valid positive numeric value.
+            </div>
+        </div>
+        <div class="modal-footer border-top bg-light">
+            <button type="button" class="btn btn-outline-secondary shadow-btn-custom" id="btnCancelVehicle">Cancel</button>
+            <button type="button" id="btnSaveVehicle" class="btn btn-primary shadow-btn-custom">Calculate Cost</button>
+        </div>
+    </div>
+  </div>
+
+  <!-- Custom Remarks Modal -->
+  <div id="customRemarkModal" class="modal glass-modal">
+    <div class="modal-card shadow-modal-custom table-dark-border">
+        <div class="modal-header border-bottom">
+            <div>
+              <h3 class="mb-1">Custom Remark</h3>
+              <p class="modal-subtitle mb-0">Enter a specific remark for this expense</p>
+            </div>
+            <button type="button" class="icon-btn modal-close" id="closeCustomRemarkModal">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+        <div class="modal-body p-4">
+            <div class="form-group mb-0">
+                <label class="fw-bold mb-2" style="font-size: 12px; color: var(--text-secondary); text-transform: uppercase;">Remark <span class="required">*</span></label>
+                <input type="text" id="customRemarkInput" class="form-control input-dark-border shadow-input-custom" placeholder="Type custom remark..." required autocomplete="off">
+            </div>
+            <div id="customRemarkError" class="alert alert-danger mt-3 mb-0 shadow-sm" style="display: none; padding: 10px; font-size: 13px;">
+                Please enter a valid remark.
+            </div>
+        </div>
+        <div class="modal-footer border-top bg-light">
+            <button type="button" class="btn btn-outline-secondary shadow-btn-custom" id="btnCancelCustomRemark">Cancel</button>
+            <button type="button" id="btnSaveCustomRemark" class="btn btn-primary shadow-btn-custom">Confirm</button>
+        </div>
+    </div>
+  </div>
+
+  <div id="editExpenseModal" class="modal glass-modal">
+    <div class="modal-card shadow-modal-custom table-dark-border modal-lg">
+        <div class="modal-header border-bottom">
+            <div>
+              <h3 class="mb-1">Modify Ledger Entry</h3>
+              <p class="modal-subtitle mb-0">Update transaction details</p>
+            </div>
+            <button type="button" class="icon-btn modal-close" id="closeEditExpenseModal">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+        <form id="editExpenseForm">
+            <input type="hidden" id="editSheetRow">
+            <input type="hidden" id="e_vehicleKm">
+            <input type="hidden" id="e_vehicleCalcCost">
+            
+            <div class="modal-body modal-body-grid p-4">
+                <div class="filter-group"><label>Profile</label><input type="text" id="e_name" class="form-control input-dark-border shadow-input-custom" required></div>
+                <div class="filter-group"><label>Execution Date</label><input type="date" id="e_travelDay" class="form-control input-dark-border shadow-input-custom" required></div>
+                <div class="filter-group"><label>Client Entity <span class="required">*</span></label><input type="text" id="e_customer" class="form-control input-dark-border shadow-input-custom" required></div>
+                
+                <div class="section-divider mt-4 mb-3"><span>Transit Data</span></div>
+                <div class="filter-group"><label>Origin</label><input type="text" id="e_start" class="form-control input-dark-border shadow-input-custom"></div>
+                <div class="filter-group"><label>Destination</label><input type="text" id="e_end" class="form-control input-dark-border shadow-input-custom"></div>
+                <div class="filter-group"><label>Transit Method</label><input type="text" id="e_mode" class="form-control input-dark-border shadow-input-custom"></div>
+                <div class="filter-group"><label>Location</label><select id="e_location" class="form-select input-dark-border shadow-input-custom" required></select></div>
+                
+                <div class="section-divider mt-4 mb-3"><span>Financials</span></div>
+                <div class="filter-group"><label>Travel Cost</label><input type="number" id="e_travelCost" class="form-control input-dark-border shadow-input-custom" step="0.01"></div>
+                <div class="filter-group"><label>Fooding Cost</label><input type="number" id="e_foodingCost" class="form-control input-dark-border shadow-input-custom" step="0.01"></div>
+                <div class="filter-group"><label>Other Expenses</label><input type="number" id="e_otherExp" class="form-control input-dark-border shadow-input-custom" step="0.01"></div>
+                <div class="filter-group"><label>Equipment Transport</label><input type="number" id="e_equip" class="form-control input-dark-border shadow-input-custom" step="0.01"></div>
+                <div class="filter-group"><label>Material Purchase</label><input type="number" id="e_mat" class="form-control input-dark-border shadow-input-custom" step="0.01"></div>
+                <div class="filter-group"><label>GST Value</label><input type="number" id="e_gstValue" class="form-control input-dark-border shadow-input-custom" step="0.01"></div>
+                
+                <div class="section-divider mt-4 mb-3"><span>Annotations & Docs</span></div>
+                <div class="filter-group"><label>Misc Categorization</label><select id="e_remarksOther" class="form-select input-dark-border shadow-input-custom"></select></div>
+                <div class="filter-group full-width"><label>Remarks</label><textarea id="e_remarks" class="form-control input-dark-border shadow-input-custom" rows="2"></textarea></div>
+                <div class="filter-group full-width">
+                    <label>Attachment Override</label>
+                    <div id="e_currentDoc" class="doc-preview shadow-sm border-dark"></div>
+                    <input type="file" id="e_newDoc" class="form-control input-dark-border shadow-input-custom file-input" accept="image/*,.pdf">
+                </div>
+            </div>
+            <div class="modal-footer border-top bg-light">
+                <button type="submit" id="btnSaveExpenseEdit" class="btn btn-primary shadow-btn-custom">
+                    <span class="btn-text">Commit Overwrite</span>
+                    <span class="loader hidden"></span>
+                </button>
+            </div>
+        </form>
+    </div>
+  </div>
+
+  <div id="userModal" class="modal glass-modal">
+    <div class="modal-card shadow-modal-custom table-dark-border">
+        <div class="modal-header border-bottom">
+            <div>
+              <h3 id="userModalTitle" class="mb-1">Add Profile</h3>
+              <p class="modal-subtitle mb-0">Manage access control</p>
+            </div>
+            <button type="button" class="icon-btn modal-close" id="closeUserModal">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+        <form id="userForm">
+            <input type="hidden" id="u_row">
+            <div class="modal-body p-4">
+              <div class="form-group mb-3">
+                  <label class="fw-bold mb-2" style="font-size: 12px; color: var(--text-secondary); text-transform: uppercase;">Login ID <span class="required">*</span></label>
+                  <input type="text" id="u_name" class="form-control input-dark-border shadow-input-custom" placeholder="e.g. J.SMITH" required autocomplete="off">
+              </div>
+              <div class="form-group mb-3">
+                  <label class="fw-bold mb-2" style="font-size: 12px; color: var(--text-secondary); text-transform: uppercase;">Password <span class="required">*</span></label>
+                  <input type="text" id="u_password" class="form-control input-dark-border shadow-input-custom" required autocomplete="off">
+              </div>
+              
+              <div class="form-group mb-3" id="u_type_group">
+                  <label class="fw-bold mb-2" style="font-size: 12px; color: var(--text-secondary); text-transform: uppercase;">Type <span class="required">*</span></label>
+                  <select id="u_type" class="form-select input-dark-border shadow-input-custom" required>
+                      <option value="" disabled selected>Select Type</option>
+                      <option value="CONTRACT">CONTRACT</option>
+                      <option value="SERVICE">SERVICE</option>
+                      <option value="RAILWAY">RAILWAY</option>
+                      <option value="BACK OFFICE">BACK OFFICE</option>
+                      <option value="INDUSTRIAL">INDUSTRIAL</option>
+                  </select>
+              </div>
+              <div class="form-group mb-0">
+                  <label class="fw-bold mb-2" style="font-size: 12px; color: var(--text-secondary); text-transform: uppercase;">Registered Email Address <span id="u_email_req_indicator" class="required">*</span></label>
+                  <input type="email" id="u_email" class="form-control input-dark-border shadow-input-custom" placeholder="user@domain.com" required autocomplete="off">
+              </div>
+            </div>
+            <div class="modal-footer border-top bg-light">
+                <button type="button" class="btn btn-outline-secondary shadow-btn-custom" id="btnCancelUser">Cancel</button>
+                <button type="submit" id="btnSaveUser" class="btn btn-primary shadow-btn-custom">
+                    <span class="btn-text">Save Employee</span>
+                    <span class="loader hidden"></span>
+                </button>
+            </div>
+        </form>
+    </div>
+  </div>
+
+  <!-- Dynamic Column Filter Popup Window -->
+  <div id="columnFilterPopup" class="filter-popup shadow-modal-custom table-dark-border" style="display:none;">
+      <div class="filter-popup-header">
+          <input type="text" id="filterPopupSearch" class="form-control input-dark-border shadow-input-custom" placeholder="Search values...">
+      </div>
+      <div class="filter-popup-list" id="filterPopupList"></div>
+      <div class="filter-popup-actions">
+          <div style="display:flex; gap:8px;">
+              <button type="button" class="btn btn-outline-secondary btn-sm shadow-btn-custom" id="btnFilterSelectAll" style="min-height:30px; padding:0 10px;">All</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm shadow-btn-custom" id="btnFilterClearAll" style="min-height:30px; padding:0 10px;">None</button>
+          </div>
+          <div style="display:flex; gap:8px;">
+              <button type="button" class="btn btn-outline-danger btn-sm shadow-btn-custom" id="btnFilterReset" style="min-height:30px; padding:0 10px;">Reset</button>
+              <button type="button" class="btn btn-primary btn-sm shadow-btn-custom" id="btnFilterApply" style="min-height:30px; padding:0 10px;">Apply</button>
+          </div>
+      </div>
+  </div>
+
+  <div id="toastContainer"></div>
+  <?!= include('JavaScript'); ?>
+</body>
+</html>

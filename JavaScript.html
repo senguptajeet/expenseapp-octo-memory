@@ -1,0 +1,1363 @@
+<!-- JavaScript.html -->
+<script>
+  const BIKE_RATE_PER_KM = 3.00; 
+  const CAR_RATE_PER_KM = 13.00;
+
+  document.addEventListener('DOMContentLoaded', () => {
+    
+    const INITIAL_ROWS = 5;
+    const ROWS_TO_ADD = 2;
+    
+    let locationOptions = [];
+    let remarksOtherOptions = [];
+    let loggedInUser = '';
+    let effectiveUser = ''; 
+    
+    let currentReportData = []; // Immutable core data retrieved from server
+    let activeFilters = {}; // Dynamically tracks applied client filters
+    let currentFilterColIdx = null; // Tracks currently open filter dropdown
+    let isAdminUser = false; 
+    
+    let sessionTimeoutTimer = null; 
+    
+    let currentVehicleRow = null; 
+    
+    let currentRemarksSelect = null; // Tracks active Custom Remarks dropdown element
+    
+    const loginContainer = document.getElementById('loginContainer');
+    const dashboardContainer = document.getElementById('dashboardContainer');
+    const gridBody = document.getElementById('gridBody');
+    const form = document.getElementById('expenseForm');
+    const btnAddRow = document.getElementById('btnAddRow');
+    const btnSubmit = document.getElementById('btnSubmit');
+    const btnReset = document.getElementById('btnReset');
+    const btnText = btnSubmit.querySelector('.btn-text');
+    const loader = btnSubmit.querySelector('.loader');
+    const totalAmountDisplay = document.getElementById('totalAmount');
+    
+    const delegatePanel = document.getElementById('delegatePanel');
+    const expenseEntryWrapper = document.getElementById('expenseEntryWrapper');
+    const delegateEmployee = document.getElementById('delegateEmployee');
+    const btnConfirmDelegate = document.getElementById('btnConfirmDelegate');
+    const displaySelectedDelegate = document.getElementById('displaySelectedDelegate');
+
+    const filterEmployee = document.getElementById('filterEmployee');
+    const readOnlyEmployee = document.getElementById('readOnlyEmployee');
+    const filterFromDate = document.getElementById('filterFromDate');
+    const filterToDate = document.getElementById('filterToDate');
+    const btnSearchReport = document.getElementById('btnSearchReport');
+    const btnResetReport = document.getElementById('btnResetReport');
+    const btnExportPDF = document.getElementById('btnExportPDF');
+    const btnExportCSV = document.getElementById('btnExportCSV');
+      
+    const btnAuditExpenses = document.getElementById('btnAuditExpenses');
+    const btnPredictCashFlow = document.getElementById('btnPredictCashFlow');
+    
+    const reportGridBody = document.getElementById('reportGridBody');
+    const reportSummaryPanel = document.getElementById('reportSummaryPanel');
+    
+    const aiInsightContainer = document.getElementById('aiInsightContainer'); 
+    const aiInsightText = document.getElementById('aiInsightText');
+    
+    const userMenuBtn = document.getElementById('userMenuBtn');
+    const userDropdown = document.getElementById('userDropdown');
+    const btnLogout = document.getElementById('btnLogout');
+    const loggedInUserNameDisplay = document.getElementById('loggedInUserNameDisplay');
+
+    const vehicleKmModal = document.getElementById('vehicleKmModal');
+    const vehicleKmInput = document.getElementById('vehicleKmInput');
+    const vehicleKmError = document.getElementById('vehicleKmError');
+    const btnSaveVehicle = document.getElementById('btnSaveVehicle');
+    const btnCancelVehicle = document.getElementById('btnCancelVehicle');
+    const closeVehicleModal = document.getElementById('closeVehicleModal');
+
+    const filterPopup = document.getElementById('columnFilterPopup');
+
+    const customRemarkModal = document.getElementById('customRemarkModal');
+    const customRemarkInput = document.getElementById('customRemarkInput');
+    const customRemarkError = document.getElementById('customRemarkError');
+
+
+    setInterval(() => {
+      const now = new Date();
+      document.getElementById('currentTime').textContent = now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    }, 1000);
+
+    document.body.addEventListener('click', resetSessionTimer);
+    function resetSessionTimer() {
+        if(!loggedInUser) return;
+        clearTimeout(sessionTimeoutTimer);
+        sessionTimeoutTimer = setTimeout(() => {
+            btnLogout.click();
+            showToast("Session expired due to inactivity.", "warning");
+        }, 3600000); 
+    }
+
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+
+    tabBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        tabBtns.forEach(b => b.classList.remove('active'));
+        tabContents.forEach(c => c.classList.remove('active'));
+        
+        btn.classList.add('active');
+        document.getElementById(btn.getAttribute('data-target')).classList.add('active');
+        
+        if(btn.getAttribute('data-target') === 'tabAdmin') loadUsersList();
+      });
+    });
+
+    userMenuBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      userDropdown.classList.toggle('show');
+    });
+
+    document.addEventListener('click', (e) => {
+      if (userDropdown.classList.contains('show') && !userDropdown.contains(e.target)) {
+        userDropdown.classList.remove('show');
+      }
+      if (filterPopup.style.display === 'flex' && !filterPopup.contains(e.target) && !e.target.closest('.filter-icon')) {
+        filterPopup.style.display = 'none';
+      }
+    });
+
+    btnLogout.addEventListener('click', () => {
+      loggedInUser = ''; effectiveUser = ''; isAdminUser = false;
+      clearTimeout(sessionTimeoutTimer);
+      userDropdown.classList.remove('show');
+      
+      document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+      tabBtns[0].click();
+      dashboardContainer.style.display = 'none';
+      
+      loginContainer.style.display = 'flex';
+      document.getElementById('loginForm').reset();
+      
+      displaySelectedDelegate.textContent = '';
+      delegateEmployee.innerHTML = '<option value="" disabled selected>Select Profile...</option>';
+      filterEmployee.innerHTML = '<option value="All Employees">System Global</option>';
+      gridBody.innerHTML = '';
+      clearReport();
+    });
+
+    document.getElementById('loginForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      
+      const un = document.getElementById('loginUsername').value;
+      const pw = document.getElementById('loginPassword').value;
+      const btn = document.getElementById('btnLogin');
+      const err = document.getElementById('loginError');
+
+      btn.disabled = true;
+      btn.querySelector('.loader').classList.remove('hidden');
+      err.style.display = 'none';
+
+      google.script.run
+        .withSuccessHandler(res => {
+          btn.disabled = false;
+          btn.querySelector('.loader').classList.add('hidden');
+          
+          if (res.success) {
+            loggedInUser = res.username; effectiveUser = res.username; loggedInUserNameDisplay.textContent = res.username; 
+            isAdminUser = res.isAdmin; 
+            resetSessionTimer();
+
+            showToast('Identity verified successfully.', 'success');
+            loginContainer.style.display = 'none';
+            dashboardContainer.style.display = 'flex';
+            
+            if (isAdminUser) {
+                delegatePanel.style.display = 'flex';
+                expenseEntryWrapper.style.display = 'none'; 
+                filterEmployee.style.display = 'block';
+                readOnlyEmployee.style.display = 'none';
+                
+                google.script.run.withSuccessHandler(empList => {
+                   const dl = document.getElementById('delegateEmployee');
+                   const fl = document.getElementById('filterEmployee');
+                   dl.innerHTML = '<option value="" disabled selected>Select Profile...</option>' + empList.map(e => `<option value="${e}">${e}</option>`).join('');
+                   fl.innerHTML = '<option value="All Employees">System Global</option>' + empList.map(e => `<option value="${e}">${e}</option>`).join('');
+                }).getEmployeeList(loggedInUser);
+
+                document.querySelectorAll('.admin-only').forEach(el => {
+                    if(el.tagName === 'TH' || el.tagName === 'TD') el.style.display = 'table-cell';
+                    else if(el.classList.contains('tab-btn')) el.style.display = 'flex';
+                    else if(el.tagName === 'BUTTON') el.style.display = 'inline-flex';
+                    else el.style.display = 'block';
+                });
+                loadDataAndInitializeGrid(false); 
+            } else {
+                delegatePanel.style.display = 'none';
+                expenseEntryWrapper.style.display = 'flex';
+                filterEmployee.style.display = 'none';
+                readOnlyEmployee.textContent = loggedInUser;
+                readOnlyEmployee.style.display = 'block';
+                loadDataAndInitializeGrid(true); 
+            }
+          } else {
+            err.textContent = res.message;
+            err.style.display = 'block';
+          }
+        })
+        .withFailureHandler(error => {
+            btn.disabled = false;
+            btn.querySelector('.loader').classList.add('hidden');
+            err.textContent = "Connection to server failed. Please try again.";
+            err.style.display = 'block';
+        }).authenticateUser(un, pw);
+    });
+
+    btnConfirmDelegate.addEventListener('click', () => {
+      const emp = delegateEmployee.value;
+      if (!emp) return showToast('Please select a profile.', 'error');
+      
+      effectiveUser = emp;
+      expenseEntryWrapper.style.display = 'flex';
+      displaySelectedDelegate.textContent = `Operating as: ${emp}`;
+      
+      const fl = document.getElementById('filterEmployee');
+      if (fl && Array.from(fl.options).some(opt => opt.value === emp)) {
+          fl.value = emp;
+      }
+
+      initGrid(INITIAL_ROWS);
+      showToast(`Context shifted to ${emp}`, 'success');
+    });
+
+    function loadDataAndInitializeGrid(shouldInitGrid = true) {
+      if (locationOptions.length > 0 && remarksOtherOptions.length > 0) {
+          if(shouldInitGrid) initGrid(INITIAL_ROWS);
+          return;
+      }
+      if(shouldInitGrid) gridBody.innerHTML = '<tr><td colspan="18" style="text-align:center; padding:40px; color: var(--text-muted);"><span class="loader" style="border-color:var(--primary-color); border-bottom-color:transparent;"></span></td></tr>';
+      
+      google.script.run
+        .withSuccessHandler((data) => {
+          if (data.error) showToast('Notice: Secondary configuration loaded poorly. Form options may be limited.', 'warning');
+          locationOptions = data.locations || []; remarksOtherOptions = data.remarksOther || [];
+          btnAddRow.disabled = false; btnSubmit.disabled = false; btnReset.disabled = false;
+          populateEditModalDropdowns();
+          if(shouldInitGrid) initGrid(INITIAL_ROWS);
+        })
+        .withFailureHandler((error) => {
+          showToast('Failed to load system metadata.', 'error');
+          btnAddRow.disabled = false; btnSubmit.disabled = false; btnReset.disabled = false;
+          if(shouldInitGrid) initGrid(INITIAL_ROWS);
+        }).getDropdownData();
+    }
+
+    btnAddRow.addEventListener('click', () => addRows(ROWS_TO_ADD));
+    btnReset.addEventListener('click', () => initGrid(INITIAL_ROWS));
+    form.addEventListener('submit', handleFormSubmit);
+    gridBody.addEventListener('keydown', handleKeyboardNavigation);
+
+    function calculateTotalExpense() {
+      const rows = gridBody.querySelectorAll('tr');
+      let total = 0;
+      rows.forEach(row => {
+        const travel = parseFloat(row.querySelector('[data-key="travelCost"]')?.value) || 0;
+        const food = parseFloat(row.querySelector('[data-key="foodingCost"]')?.value) || 0;
+        const other = parseFloat(row.querySelector('[data-key="otherExpense"]')?.value) || 0;
+        const equip = parseFloat(row.querySelector('[data-key="equipmentTransport"]')?.value) || 0;
+        const material = parseFloat(row.querySelector('[data-key="materialPurchase"]')?.value) || 0;
+        const gst = parseFloat(row.querySelector('[data-key="gstValue"]')?.value) || 0;
+        
+        total += (travel + food + other + equip + material + gst);
+      });
+      totalAmountDisplay.textContent = total.toFixed(2);
+    }
+
+    function initGrid(rowCount) {
+      gridBody.innerHTML = '';
+      addRows(rowCount);
+      calculateTotalExpense();
+    }
+
+    function addRows(count) {
+      const locationSelectHTML = locationOptions.length > 0 
+        ? `<select data-key="location" class="nav-input form-select form-select-sm input-dark-border shadow-input-custom"><option value="" disabled selected>Select...</option>${locationOptions.map(opt => `<option value="${opt}">${opt}</option>`).join('')}</select>`
+        : `<input type="text" data-key="location" class="nav-input form-control form-control-sm input-dark-border shadow-input-custom" placeholder="Type Location">`;
+       
+      const remarksOtherSelectHTML = remarksOtherOptions.length > 0
+        ? `<select data-key="remarksOther" class="nav-input form-select form-select-sm input-dark-border shadow-input-custom" disabled><option value="" class="default-opt">N/A</option>${remarksOtherOptions.map(opt => `<option value="${opt}">${opt}</option>`).join('')}<option value="Custom Remarks" style="font-weight:bold; color:var(--primary-color);">&#43; Custom Remarks</option></select>`
+        : `<input type="text" data-key="remarksOther" class="nav-input form-control form-control-sm input-dark-border shadow-input-custom" disabled placeholder="Type Remarks">`;
+
+      const fragment = document.createDocumentFragment();
+      for (let i = 0; i < count; i++) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="col-sl" data-label="ID"></td>
+          <td data-label="NAME *"><input type="text" data-key="name" class="nav-input form-control form-control-sm input-dark-border shadow-input-custom" value="${effectiveUser}" placeholder="Enter Name"></td>
+          <td data-label="TRAVEL DAY *"><input type="date" data-key="travelDay" class="nav-input form-control form-control-sm input-dark-border shadow-input-custom"></td>
+          <td data-label="CUSTOMER NAME *"><input type="text" data-key="customerName" class="nav-input form-control form-control-sm input-dark-border shadow-input-custom" placeholder="Customer"></td>
+          <td data-label="STARTING POINT"><input type="text" data-key="startingPoint" class="nav-input form-control form-control-sm input-dark-border shadow-input-custom" placeholder="City"></td>
+          <td data-label="ENDING POINT"><input type="text" data-key="endingPoint" class="nav-input form-control form-control-sm input-dark-border shadow-input-custom" placeholder="City"></td>
+          <td data-label="MODE OF TRAVEL"><input type="text" data-key="modeOfTravel" class="nav-input form-control form-control-sm input-dark-border shadow-input-custom" placeholder="E.g. Flight, Car, Bike"></td>
+          <td data-label="LOCATION *">${locationSelectHTML}</td>
+          <td data-label="TRAVEL COST"><input type="number" data-key="travelCost" class="nav-input numeric-field form-control form-control-sm input-dark-border shadow-input-custom" min="0" step="0.01" placeholder="0.00"></td>
+          <td data-label="FOODING COST"><input type="number" data-key="foodingCost" class="nav-input numeric-field form-control form-control-sm input-dark-border shadow-input-custom" min="0" step="0.01" placeholder="0.00"></td>
+          <td data-label="OTHER EXPENSE"><input type="number" data-key="otherExpense" class="nav-input numeric-field form-control form-control-sm input-dark-border shadow-input-custom" min="0" step="0.01" placeholder="0.00"></td>
+          <td data-label="EQUIPMENT TRANS."><input type="number" data-key="equipmentTransport" class="nav-input numeric-field form-control form-control-sm input-dark-border shadow-input-custom" min="0" step="0.01" placeholder="0.00"></td>
+          <td data-label="MATERIAL PURCH."><input type="number" data-key="materialPurchase" class="nav-input numeric-field form-control form-control-sm input-dark-border shadow-input-custom" min="0" step="0.01" placeholder="0.00"></td>
+          <td data-label="GST VALUE"><input type="number" data-key="gstValue" class="nav-input numeric-field form-control form-control-sm input-dark-border shadow-input-custom" min="0" step="0.01" placeholder="0.00"></td>
+          <td data-label="REMARKS"><textarea data-key="remarks" class="nav-input form-control form-control-sm input-dark-border shadow-input-custom" placeholder="Remarks"></textarea></td>
+          <td data-label="REMARKS (OTHER)">${remarksOtherSelectHTML}</td>
+          <td data-label="DOCUMENT"><input type="file" data-key="document" class="nav-input form-control form-control-sm input-dark-border shadow-input-custom file-input" accept="image/*,.pdf" style="width: 170px;"></td>
+          <td class="col-action" data-label="ACTIONS"><button type="button" class="btn btn-sm btn-outline-danger shadow-btn-custom btn-delete" title="Delete Row"><span class="material-symbols-outlined">delete</span></button></td>
+        `;
+        attachRowListeners(tr);
+        fragment.appendChild(tr);
+      }
+      gridBody.appendChild(fragment);
+      updateSerialNumbers();
+    }
+
+    function attachRowListeners(row) {
+      row.querySelector('.btn-delete').addEventListener('click', () => {
+        if (gridBody.children.length > 1) { row.remove(); updateSerialNumbers(); calculateTotalExpense(); }
+        else showToast('At least one row must remain.', 'error');
+      });
+
+      row.querySelectorAll('.numeric-field').forEach(input => {
+        input.addEventListener('input', (e) => { if (e.target.value < 0) e.target.value = 0; calculateTotalExpense(); });
+      });
+
+      const otherExpenseInput = row.querySelector('[data-key="otherExpense"]');
+      const remarksOtherDropdown = row.querySelector('[data-key="remarksOther"]');
+      
+      if(remarksOtherDropdown) {
+          const defaultOpt = remarksOtherDropdown.tagName === 'SELECT' ? remarksOtherDropdown.querySelector('.default-opt') : null;
+          otherExpenseInput.addEventListener('input', () => {
+            if ((parseFloat(otherExpenseInput.value) || 0) > 0) {
+              remarksOtherDropdown.disabled = false; 
+              if (defaultOpt) defaultOpt.text = "Select Remarks *";
+            } else {
+              remarksOtherDropdown.disabled = true; remarksOtherDropdown.value = ''; 
+              if (defaultOpt) defaultOpt.text = "N/A"; 
+              remarksOtherDropdown.classList.remove('input-error');
+            }
+          });
+      }
+    }
+
+    function updateSerialNumbers() {
+      const rows = gridBody.querySelectorAll('tr');
+      rows.forEach((row, index) => { row.querySelector('.col-sl').textContent = index + 1; });
+    }
+
+    function handleKeyboardNavigation(e) {
+      const el = document.activeElement;
+      if (!el || !el.classList.contains('nav-input')) return;
+      if (el.type === 'file') return; 
+
+      const keys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'];
+      if (!keys.includes(e.key)) return;
+      if (el.tagName === 'SELECT' && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) return; 
+
+      let cIdx = el.closest('td').cellIndex, rIdx = el.closest('tr').rowIndex - 1;
+
+      if (e.key === 'ArrowUp') rIdx--;
+      if (e.key === 'ArrowDown' || e.key === 'Enter') rIdx++;
+      
+      if ((el.type !== 'text' && el.type !== 'textarea') || el.value === '') {
+          if (e.key === 'ArrowLeft') cIdx--;
+          if (e.key === 'ArrowRight') cIdx++;
+      }
+
+      const targetRow = gridBody.children[rIdx];
+      if (targetRow) {
+        const targetInput = targetRow.children[cIdx]?.querySelector('.nav-input:not([disabled])');
+        if (targetInput) { e.preventDefault(); targetInput.focus(); if(targetInput.select && targetInput.tagName !== 'SELECT' && targetInput.type !== 'file') targetInput.select(); }
+      }
+    }
+
+    gridBody.addEventListener('change', (e) => {
+        if (e.target.getAttribute('data-key') === 'modeOfTravel') {
+            const val = e.target.value || '';
+            const row = e.target.closest('tr');
+            
+            const isBike = /bike/i.test(val);
+            const isCar = /car/i.test(val);
+            const isVehicle = isBike || isCar;
+            const hasPrompted = row.getAttribute('data-vehicle-prompted');
+            
+            if (isVehicle && hasPrompted !== 'true') {
+                row.setAttribute('data-vehicle-prompted', 'true');
+                row.setAttribute('data-vehicle-type', isCar ? 'car' : 'bike');
+                openVehicleModal(row);
+            } else if (!isVehicle && hasPrompted === 'true') {
+                row.removeAttribute('data-vehicle-prompted');
+                row.removeAttribute('data-vehicle-km');
+                row.removeAttribute('data-vehicle-type');
+                
+                const previousVehicleCost = parseFloat(row.getAttribute('data-vehicle-cost')) || 0;
+                if (previousVehicleCost > 0) {
+                    const travelCostInput = row.querySelector('[data-key="travelCost"]');
+                    let currentCost = parseFloat(travelCostInput.value) || 0;
+                    
+                    let newCost = currentCost - previousVehicleCost;
+                    if (newCost < 0) newCost = 0;
+                    
+                    travelCostInput.value = newCost > 0 ? newCost.toFixed(2) : '';
+                    row.removeAttribute('data-vehicle-cost');
+                    
+                    calculateTotalExpense();
+                }
+            }
+        }
+        
+        // Listeners for "Custom Remarks" selection within the main grid
+        if (e.target.getAttribute('data-key') === 'remarksOther') {
+            if (e.target.value === 'Custom Remarks') {
+                openCustomRemarkModal(e.target);
+            }
+        }
+    });
+
+    function openVehicleModal(row) {
+        currentVehicleRow = row;
+        vehicleKmInput.value = '';
+        vehicleKmError.style.display = 'none';
+        vehicleKmModal.classList.add('show');
+        setTimeout(() => vehicleKmInput.focus(), 100);
+    }
+
+    function closeVehicleModalFunc(isCancel = true) {
+        vehicleKmModal.classList.remove('show');
+        if (isCancel && currentVehicleRow && !currentVehicleRow.hasAttribute('data-vehicle-cost')) {
+            currentVehicleRow.removeAttribute('data-vehicle-prompted');
+            currentVehicleRow.removeAttribute('data-vehicle-type');
+        }
+        currentVehicleRow = null;
+    }
+
+    closeVehicleModal.addEventListener('click', () => closeVehicleModalFunc(true));
+    btnCancelVehicle.addEventListener('click', () => closeVehicleModalFunc(true));
+
+    btnSaveVehicle.addEventListener('click', () => {
+        const km = parseFloat(vehicleKmInput.value);
+        if (isNaN(km) || km <= 0) {
+            vehicleKmError.style.display = 'block';
+            return;
+        }
+        vehicleKmError.style.display = 'none';
+        
+        if (currentVehicleRow) {
+            const type = currentVehicleRow.getAttribute('data-vehicle-type');
+            const rate = type === 'car' ? CAR_RATE_PER_KM : BIKE_RATE_PER_KM;
+            const travelCostInput = currentVehicleRow.querySelector('[data-key="travelCost"]');
+            const existingCost = parseFloat(travelCostInput.value) || 0;
+            const vehicleCost = km * rate;
+            
+            currentVehicleRow.setAttribute('data-vehicle-cost', vehicleCost);
+            currentVehicleRow.setAttribute('data-vehicle-km', km);
+            
+            travelCostInput.value = (existingCost + vehicleCost).toFixed(2);
+            calculateTotalExpense();
+        }
+        closeVehicleModalFunc(false); 
+    });
+
+
+    /* --- Custom Remarks Modal Logic --- */
+    function openCustomRemarkModal(selectElement) {
+        currentRemarksSelect = selectElement;
+        customRemarkInput.value = '';
+        customRemarkError.style.display = 'none';
+        customRemarkModal.classList.add('show');
+        setTimeout(() => customRemarkInput.focus(), 100);
+    }
+
+    function closeCustomRemarkModalFunc(isCancel = true) {
+        customRemarkModal.classList.remove('show');
+        if (isCancel && currentRemarksSelect) {
+            currentRemarksSelect.value = "";
+            currentRemarksSelect.classList.add('input-error'); 
+        }
+        currentRemarksSelect = null;
+    }
+
+    document.getElementById('closeCustomRemarkModal').addEventListener('click', () => closeCustomRemarkModalFunc(true));
+    document.getElementById('btnCancelCustomRemark').addEventListener('click', () => closeCustomRemarkModalFunc(true));
+
+    document.getElementById('btnSaveCustomRemark').addEventListener('click', () => {
+        const val = customRemarkInput.value.trim();
+        if (!val) {
+            customRemarkError.style.display = 'block';
+            return;
+        }
+        customRemarkError.style.display = 'none';
+
+        if (currentRemarksSelect) {
+            let exists = Array.from(currentRemarksSelect.options).some(opt => opt.value.toLowerCase() === val.toLowerCase());
+            if (!exists) {
+                // Insert the custom option right before the 'Custom Remarks' option
+                const newOpt = new Option(val, val);
+                const customRemarkOptionIndex = currentRemarksSelect.options.length - 1;
+                currentRemarksSelect.add(newOpt, currentRemarksSelect.options[customRemarkOptionIndex] || null);
+            }
+            currentRemarksSelect.value = val;
+            currentRemarksSelect.classList.remove('input-error');
+        }
+        closeCustomRemarkModalFunc(false);
+    });
+
+    function getBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = error => reject(error);
+      });
+    }
+
+    async function handleFormSubmit(e) {
+      e.preventDefault();
+      document.querySelectorAll('.input-error').forEach(el => el.classList.remove('input-error'));
+      
+      const rows = gridBody.querySelectorAll('tr');
+      const validDataToSubmit = [];
+      let hasError = false;
+      let hasExpenseError = false;
+
+      btnSubmit.disabled = btnReset.disabled = btnAddRow.disabled = true;
+      btnText.textContent = 'Processing...'; loader.classList.remove('hidden');
+
+      for (let i = 0; i < rows.length; i++) {
+        const inputs = rows[i].querySelectorAll('.nav-input:not([type="file"])');
+        if (Array.from(inputs).every(input => input.getAttribute('data-key') === 'name' || input.value.trim() === '' || input.value.trim() === '0')) continue;
+
+        const rowData = {};
+        inputs.forEach(input => { 
+            const key = input.getAttribute('data-key');
+            if (key) rowData[key] = (key === 'name' && isAdminUser) ? effectiveUser : input.value; 
+        });
+        rowData['vehicleKm'] = rows[i].getAttribute('data-vehicle-km') || 0;
+        rowData['vehicleCalcCost'] = rows[i].getAttribute('data-vehicle-cost') || 0;
+
+        const req = ['name', 'travelDay', 'customerName', 'location'];
+        for (let j = 0; j < req.length; j++) {
+          if (!rowData[req[j]] || !rowData[req[j]].trim()) {
+            rows[i].querySelector(`[data-key="${req[j]}"]`).classList.add('input-error'); hasError = true;
+          }
+        }
+
+        if ((parseFloat(rowData.otherExpense) || 0) > 0 && (!rowData.remarksOther || !rowData.remarksOther.trim())) {
+          rows[i].querySelector('[data-key="remarksOther"]').classList.add('input-error'); hasError = true;
+        }
+
+        const gstVal = parseFloat(rowData.gstValue) || 0;
+        const totalRowExpense = (parseFloat(rowData.travelCost) || 0) + 
+                                (parseFloat(rowData.foodingCost) || 0) + 
+                                (parseFloat(rowData.otherExpense) || 0) + 
+                                (parseFloat(rowData.equipmentTransport) || 0) + 
+                                (parseFloat(rowData.materialPurchase) || 0) + 
+                                (parseFloat(rowData.vehicleCalcCost) || 0) + 
+                                gstVal;
+        if (totalRowExpense <= 0) {
+            rows[i].querySelectorAll('.numeric-field').forEach(field => field.classList.add('input-error'));
+            hasError = true;
+            hasExpenseError = true;
+        }
+
+        const fileInput = rows[i].querySelector('input[type="file"]');
+        let hasFile = false;
+
+        if (fileInput && fileInput.files.length > 0) {
+            hasFile = true;
+            try {
+                const file = fileInput.files[0];
+                if(file.size > 5 * 1024 * 1024) { 
+                    showToast("File size must be under 5MB.", "error");
+                    fileInput.classList.add('input-error');
+                    hasError = true;
+                } else {
+                    rowData.document = {
+                        filename: file.name,
+                        mimeType: file.type,
+                        data: await getBase64(file)
+                    };
+                }
+            } catch(err) {
+                hasError = true;
+                showToast("Failed to process attached document.", "error");
+            }
+        }
+
+        if (gstVal > 0 && !hasFile) {
+            if(fileInput) fileInput.classList.add('input-error');
+            hasError = true;
+            showToast('Document upload is strictly mandatory when GST Value is greater than 0.', 'error');
+        }
+
+        if (!hasError) validDataToSubmit.push(rowData);
+        else break; 
+      }
+
+      if (hasError) {
+          btnSubmit.disabled = btnReset.disabled = btnAddRow.disabled = false;
+          btnText.textContent = 'Submit Ledger'; loader.classList.add('hidden');
+          if (hasExpenseError) {
+              return showToast('Every submitted row must contain at least one valid expense greater than zero.', 'error');
+          }
+          return showToast('Validation failed. Please correct highlighted fields and upload documents where required.', 'error');
+      }
+      
+      if (validDataToSubmit.length === 0) {
+          btnSubmit.disabled = btnReset.disabled = btnAddRow.disabled = false;
+          btnText.textContent = 'Submit Ledger'; loader.classList.add('hidden');
+          return showToast('Grid is empty.', 'error');
+      }
+
+      btnText.textContent = 'Uploading...'; 
+
+      google.script.run
+        .withSuccessHandler((res) => {
+          btnSubmit.disabled = btnReset.disabled = btnAddRow.disabled = false;
+          btnText.textContent = 'Submit Ledger'; loader.classList.add('hidden');
+          if (res.success) { showToast(res.message, 'success'); initGrid(INITIAL_ROWS); } else showToast(res.message, 'error');
+        })
+        .withFailureHandler((err) => {
+          btnSubmit.disabled = btnReset.disabled = btnAddRow.disabled = false;
+          btnText.textContent = 'Submit Ledger'; loader.classList.add('hidden');
+          showToast(`System Error: ${err.message}`, 'error');
+        }).saveExpenseData(loggedInUser, validDataToSubmit);
+    }
+
+    // ==========================================
+    // AI ACTION LISTENERS
+    // ==========================================
+    
+    btnAuditExpenses.addEventListener('click', () => {
+        const from = filterFromDate.value, to = filterToDate.value, empFilter = filterEmployee.value;
+        if (!from || !to) return showToast('Define period bounds for auditing.', 'error');
+
+        btnAuditExpenses.disabled = true;
+        btnAuditExpenses.querySelector('.loader').classList.remove('hidden');
+        showToast('AI Auditor is analyzing expenses...', 'success');
+
+        google.script.run
+          .withSuccessHandler((res) => {
+              btnAuditExpenses.disabled = false;
+              btnAuditExpenses.querySelector('.loader').classList.add('hidden');
+              
+              if(res.success) {
+                  aiInsightContainer.style.borderColor = 'var(--error-color)';
+                  aiInsightText.innerHTML = res.insight;
+                  aiInsightContainer.style.display = 'block';
+                  showToast('AI Audit complete.', 'success');
+              } else showToast(res.message, 'error');
+          })
+          .withFailureHandler(() => {
+              btnAuditExpenses.disabled = false;
+              btnAuditExpenses.querySelector('.loader').classList.add('hidden');
+              showToast('Failed to contact AI Auditor.', 'error');
+          })
+          .auditExpensesWithAI(loggedInUser, from, to, empFilter);
+    });
+
+    btnPredictCashFlow.addEventListener('click', () => {
+        const from = filterFromDate.value, to = filterToDate.value, empFilter = filterEmployee.value;
+        if (!from || !to) return showToast('Define period bounds for forecasting.', 'error');
+
+        btnPredictCashFlow.disabled = true;
+        btnPredictCashFlow.querySelector('.loader').classList.remove('hidden');
+
+        google.script.run
+          .withSuccessHandler((res) => {
+              btnPredictCashFlow.disabled = false;
+              btnPredictCashFlow.querySelector('.loader').classList.add('hidden');
+              
+              if(res.success) {
+                  aiInsightContainer.style.borderColor = 'var(--success-color)';
+                  aiInsightText.innerHTML = res.insight;
+                  aiInsightContainer.style.display = 'block';
+              } else showToast(res.message, 'error');
+          })
+          .withFailureHandler(() => {
+              btnPredictCashFlow.disabled = false;
+              btnPredictCashFlow.querySelector('.loader').classList.add('hidden');
+              showToast('Failed to generate forecast.', 'error');
+          })
+          .predictCashFlow(loggedInUser, from, to, empFilter);
+    });
+
+    btnSearchReport.addEventListener('click', fetchReportData);
+    btnResetReport.addEventListener('click', clearReport);
+    btnExportPDF.addEventListener('click', exportToPDF); 
+    btnExportCSV.addEventListener('click', exportToCSV);
+
+    function fetchReportData() {
+      const from = filterFromDate.value, to = filterToDate.value, empFilter = filterEmployee.value;
+      
+      if (!from || !to) return showToast('Define period bounds.', 'error');
+      if (new Date(from) > new Date(to)) return showToast('Invalid period sequence.', 'error');
+
+      btnSearchReport.disabled = true; btnSearchReport.querySelector('.btn-text').style.opacity = '0.5';
+      btnSearchReport.querySelector('.loader').classList.remove('hidden');
+      
+      const colSpan = isAdminUser ? 20 : 17;
+      reportGridBody.innerHTML = `<tr><td colspan="${colSpan}" class="empty-state"><span class="loader" style="border-color:var(--primary-color); border-bottom-color:transparent;"></span></td></tr>`;
+      reportSummaryPanel.style.display = 'none';
+      
+      btnExportPDF.disabled = true; 
+      if(isAdminUser) { btnAuditExpenses.disabled = true; btnPredictCashFlow.disabled = true; btnExportCSV.disabled = true; }
+
+      google.script.run
+        .withSuccessHandler((res) => {
+          btnSearchReport.disabled = false; btnSearchReport.querySelector('.btn-text').style.opacity = '1';
+          btnSearchReport.querySelector('.loader').classList.add('hidden');
+          
+          if(res.success) { 
+             activeFilters = {};
+             currentReportData = res.data;
+             renderReportData(res.data);
+             
+             if (res.insight && res.insight.text) {
+                 aiInsightContainer.style.borderColor = 'var(--border-color)';
+                 aiInsightText.innerHTML = res.insight.text;
+                 aiInsightContainer.style.display = 'block';
+             } else {
+                 aiInsightContainer.style.display = 'none';
+             }
+             
+             showToast('Extraction complete.', 'success'); 
+           }
+          else { 
+             showToast(res.message, 'error'); 
+             reportGridBody.innerHTML = `<tr><td colspan="${colSpan}" class="empty-state">Extraction failed.</td></tr>`; 
+           }
+        })
+        .withFailureHandler(() => {
+          btnSearchReport.disabled = false; btnSearchReport.querySelector('.btn-text').style.opacity = '1';
+          btnSearchReport.querySelector('.loader').classList.add('hidden');
+          showToast('Connection error.', 'error'); reportGridBody.innerHTML = `<tr><td colspan="${colSpan}" class="empty-state">Connection error.</td></tr>`;
+        }).fetchExpenseReport(loggedInUser, from, to, empFilter);
+    }
+
+    // ==========================================
+    // CLIENT SIDE FILTERING LOGIC
+    // ==========================================
+    
+    document.getElementById('reportTable').addEventListener('click', (e) => {
+        const icon = e.target.closest('.filter-icon');
+        if (icon) {
+            e.stopPropagation();
+            openFilterPopup(icon);
+        }
+    });
+
+    function openFilterPopup(icon) {
+        const colIdx = icon.getAttribute('data-idx');
+        currentFilterColIdx = colIdx;
+
+        const uniqueValues = [...new Set(currentReportData.map(row => {
+            let val = row[colIdx];
+            return (val === null || val === undefined || val === '') ? '(Blank)' : String(val).trim();
+        }))].sort();
+
+        const listContainer = document.getElementById('filterPopupList');
+        listContainer.innerHTML = '';
+        
+        const activeSet = activeFilters[colIdx] || null;
+
+        uniqueValues.forEach(val => {
+            const isChecked = activeSet ? activeSet.includes(val) : true;
+            const div = document.createElement('div');
+            div.className = 'filter-popup-item';
+            div.innerHTML = `<input type="checkbox" value="${val.replace(/"/g, '&quot;')}" ${isChecked ? 'checked' : ''}><label>${val.replace(/</g, '&lt;')}</label>`;
+            
+            div.querySelector('label').addEventListener('click', () => {
+                const cb = div.querySelector('input');
+                cb.checked = !cb.checked;
+            });
+            
+            listContainer.appendChild(div);
+        });
+
+        const rect = icon.getBoundingClientRect();
+        filterPopup.style.display = 'flex';
+        
+        let top = rect.bottom + window.scrollY + 8;
+        let left = rect.left + window.scrollX - (260 / 2) + 12; 
+        
+        if (left < 10) left = 10;
+        if (left + 260 > window.innerWidth - 10) left = window.innerWidth - 270;
+        
+        filterPopup.style.top = `${top}px`;
+        filterPopup.style.left = `${left}px`;
+        
+        const searchInput = document.getElementById('filterPopupSearch');
+        searchInput.value = '';
+        searchInput.oninput = (e) => {
+            const term = e.target.value.toLowerCase();
+            Array.from(listContainer.children).forEach(item => {
+                const label = item.querySelector('label').textContent.toLowerCase();
+                item.style.display = label.includes(term) ? 'flex' : 'none';
+            });
+        };
+    }
+
+    document.getElementById('btnFilterSelectAll').addEventListener('click', () => {
+        const listContainer = document.getElementById('filterPopupList');
+        Array.from(listContainer.querySelectorAll('input[type="checkbox"]')).forEach(cb => {
+            if(cb.closest('.filter-popup-item').style.display !== 'none') cb.checked = true;
+        });
+    });
+
+    document.getElementById('btnFilterClearAll').addEventListener('click', () => {
+        const listContainer = document.getElementById('filterPopupList');
+        Array.from(listContainer.querySelectorAll('input[type="checkbox"]')).forEach(cb => {
+            if(cb.closest('.filter-popup-item').style.display !== 'none') cb.checked = false;
+        });
+    });
+
+    document.getElementById('btnFilterReset').addEventListener('click', () => {
+        if(currentFilterColIdx) {
+            delete activeFilters[currentFilterColIdx];
+            filterPopup.style.display = 'none';
+            applyFiltersAndRender();
+        }
+    });
+
+    document.getElementById('btnFilterApply').addEventListener('click', () => {
+        if(currentFilterColIdx) {
+            const listContainer = document.getElementById('filterPopupList');
+            const checked = Array.from(listContainer.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
+            
+            const totalVisible = Array.from(listContainer.querySelectorAll('input[type="checkbox"]')).length;
+            if (checked.length === totalVisible) {
+                delete activeFilters[currentFilterColIdx];
+            } else {
+                activeFilters[currentFilterColIdx] = checked;
+            }
+            
+            filterPopup.style.display = 'none';
+            applyFiltersAndRender();
+        }
+    });
+
+    function applyFiltersAndRender() {
+        let filteredData = currentReportData;
+        
+        if (Object.keys(activeFilters).length > 0) {
+            filteredData = currentReportData.filter(row => {
+                for (const [colIdx, allowedValues] of Object.entries(activeFilters)) {
+                    let val = row[colIdx];
+                    val = (val === null || val === undefined || val === '') ? '(Blank)' : String(val).trim();
+                    if (!allowedValues.includes(val)) {
+                        return false;
+                    }
+                }
+                return true;
+            });
+        }
+        renderReportData(filteredData);
+    }
+
+    function renderReportData(data) {
+      reportGridBody.innerHTML = '';
+      
+      const adminCols = [
+          { label: 'TIMESTAMP', idx: 1 }, { label: 'NAME', idx: 2 }, { label: 'TRAVEL DAY', idx: 3 },
+          { label: 'CUSTOMER NAME', idx: 4 }, { label: 'STARTING POINT', idx: 5 }, { label: 'ENDING POINT', idx: 6 },
+          { label: 'MODE OF TRAVEL', idx: 7 }, { label: 'LOCATION', idx: 8 }, { label: 'TRAVEL COST', idx: 9 },
+          { label: 'FOODING COST', idx: 10 }, { label: 'OTHER EXPENSE', idx: 11 }, { label: 'EQUIPMENT TRANS.', idx: 12 },
+          { label: 'MATERIAL PURCH.', idx: 13 }, { label: 'GST VALUE', idx: 19 }, { label: 'REMARKS', idx: 14 },
+          { label: 'BIKE KM', idx: 16 }, { label: 'REMARKS (OTHER)', idx: 15 }, { label: 'DOC', idx: 18, noFilter: true }
+      ];
+
+      const userCols = [
+          { label: 'NAME', idx: 2 }, { label: 'TRAVEL DAY', idx: 3 }, { label: 'CUSTOMER NAME', idx: 4 },
+          { label: 'STARTING POINT', idx: 5 }, { label: 'ENDING POINT', idx: 6 }, { label: 'MODE OF TRAVEL', idx: 7 },
+          { label: 'LOCATION', idx: 8 }, { label: 'TRAVEL COST', idx: 9 }, { label: 'FOODING COST', idx: 10 },
+          { label: 'OTHER EXPENSE', idx: 11 }, { label: 'EQUIPMENT TRANSPORT', idx: 12 }, { label: 'MATERIAL PURCHASE', idx: 13 },
+          { label: 'GST AMOUNT', idx: 19 }, { label: 'REMARKS', idx: 14 }, { label: 'BIKE KM', idx: 16 },
+          { label: 'REMARKS IF OTHER EXPENSE', idx: 15 }, { label: 'LINK', idx: 18, noFilter: true }
+      ];
+
+      const thead = document.querySelector('#reportTable thead');
+      let theadHTML = '<tr>';
+
+      if (isAdminUser) {
+          theadHTML += `<th class="col-sl">SL.</th><th class="col-action admin-only" style="display:table-cell;">ACT</th>`;
+          adminCols.forEach(col => {
+              if (col.noFilter) {
+                  theadHTML += `<th>${col.label}</th>`;
+              } else {
+                  const activeClass = activeFilters[col.idx] ? 'active' : '';
+                  theadHTML += `<th><div class="th-content">${col.label} <span class="material-symbols-outlined filter-icon ${activeClass}" data-idx="${col.idx}" title="Filter ${col.label}">filter_alt</span></div></th>`;
+              }
+          });
+      } else {
+          userCols.forEach(col => {
+              if (col.noFilter) {
+                  theadHTML += `<th>${col.label}</th>`;
+              } else {
+                  const activeClass = activeFilters[col.idx] ? 'active' : '';
+                  theadHTML += `<th><div class="th-content">${col.label} <span class="material-symbols-outlined filter-icon ${activeClass}" data-idx="${col.idx}" title="Filter ${col.label}">filter_alt</span></div></th>`;
+              }
+          });
+      }
+      theadHTML += '</tr>';
+      thead.innerHTML = theadHTML;
+
+      const colSpan = isAdminUser ? 20 : 17;
+      if (data.length === 0) {
+        reportGridBody.innerHTML = `<tr><td colspan="${colSpan}" class="empty-state" style="color:var(--error-color)!important;"><div class="empty-icon shadow-sm"><span class="material-symbols-outlined">search_off</span></div>No records found matching filters.</td></tr>`;
+        
+        // Zero-out summary
+        document.getElementById('repCount').textContent = "0";
+        ['repGrandTotal','repTravel','repFood','repOther','repEquip','repMaterial','repGst'].forEach(id => {
+            document.getElementById(id).textContent = "0.00";
+        });
+        reportSummaryPanel.style.display = 'flex'; 
+        return;
+      }
+
+      let sTravel = 0, sFood = 0, sOther = 0, sEquip = 0, sMat = 0, sGst = 0;
+      const fragment = document.createDocumentFragment();
+
+      data.forEach((row) => {
+         // Resolve raw index to original dataset for the edit modal
+         const rawIndex = currentReportData.indexOf(row);
+         const tr = document.createElement('tr');
+         let rowHTML = '';
+         
+         if (isAdminUser) {
+             rowHTML += `<td class="col-sl" data-label="SL No">${row[0]}</td>`;
+             rowHTML += `<td class="col-action admin-only" style="display:table-cell;" data-label="ACT"><button class="btn btn-sm btn-outline-primary shadow-btn-custom edit-report-btn" data-index="${rawIndex}" style="border: 1px solid var(--primary-color);" title="Modify"><span class="material-symbols-outlined" style="font-size:18px;">edit</span></button></td>`;
+             rowHTML += `<td data-label="TIMESTAMP">${row[1] || ''}</td>`;
+             rowHTML += `<td data-label="NAME">${row[2] || ''}</td>`;
+             rowHTML += `<td data-label="TRAVEL DAY">${row[3] || ''}</td>`;
+             rowHTML += `<td data-label="CUSTOMER NAME">${row[4] || ''}</td>`;
+             rowHTML += `<td data-label="STARTING POINT">${row[5] || ''}</td>`;
+             rowHTML += `<td data-label="ENDING POINT">${row[6] || ''}</td>`;
+             rowHTML += `<td data-label="MODE OF TRAVEL">${row[7] || ''}</td>`;
+             rowHTML += `<td data-label="LOCATION">${row[8] || ''}</td>`;
+             rowHTML += `<td data-label="TRAVEL COST">${row[9] === 0 ? '0' : (row[9] || '0')}</td>`;
+             rowHTML += `<td data-label="FOODING COST">${row[10] === 0 ? '0' : (row[10] || '0')}</td>`;
+             rowHTML += `<td data-label="OTHER EXPENSE">${row[11] === 0 ? '0' : (row[11] || '0')}</td>`;
+             rowHTML += `<td data-label="EQUIPMENT TRANS.">${row[12] === 0 ? '0' : (row[12] || '0')}</td>`;
+             rowHTML += `<td data-label="MATERIAL PURCH.">${row[13] === 0 ? '0' : (row[13] || '0')}</td>`;
+             rowHTML += `<td data-label="GST VALUE">${row[19] === 0 ? '0' : (row[19] || '0')}</td>`;
+             rowHTML += `<td data-label="REMARKS">${row[14] || ''}</td>`;
+             rowHTML += `<td data-label="BIKE KM">${row[16] === 0 ? '0' : (row[16] || '')}</td>`;
+             rowHTML += `<td data-label="REMARKS (OTHER)">${row[15] || ''}</td>`;
+             
+             const docUrl = row[18];
+             if (docUrl) {
+                 rowHTML += `<td style="text-align:center;" data-label="DOC"><a href="${docUrl}" target="_blank" title="open File" style="color:var(--primary-color); display:inline-block; font-weight:600; text-decoration:none;"><span class="material-symbols-outlined" style="font-size:16px; vertical-align:middle;">open_in_new</span> open File</a></td>`;
+             } else {
+                 rowHTML += `<td style="text-align:center; color:var(--text-muted);" data-label="DOC">-</td>`;
+             }
+         } else {
+             rowHTML += `<td data-label="Name">${row[2] || ''}</td>`;
+             rowHTML += `<td data-label="Travel Day">${row[3] || ''}</td>`;
+             rowHTML += `<td data-label="Customer Name">${row[4] || ''}</td>`;
+             rowHTML += `<td data-label="Starting Point">${row[5] || ''}</td>`;
+             rowHTML += `<td data-label="Ending Point">${row[6] || ''}</td>`;
+             rowHTML += `<td data-label="Mode of Travel">${row[7] || ''}</td>`;
+             rowHTML += `<td data-label="LOCATION">${row[8] || ''}</td>`;
+             rowHTML += `<td data-label="Travel Cost">${row[9] === 0 ? '0' : (row[9] || '0')}</td>`;
+             rowHTML += `<td data-label="Fooding Cost">${row[10] === 0 ? '0' : (row[10] || '0')}</td>`;
+             rowHTML += `<td data-label="Other Expense">${row[11] === 0 ? '0' : (row[11] || '0')}</td>`;
+             rowHTML += `<td data-label="Equipment Transport">${row[12] === 0 ? '0' : (row[12] || '0')}</td>`;
+             rowHTML += `<td data-label="Material Purchase">${row[13] === 0 ? '0' : (row[13] || '0')}</td>`;
+             rowHTML += `<td data-label="GST Amount">${row[19] === 0 ? '0' : (row[19] || '0')}</td>`;
+             rowHTML += `<td data-label="Remarks">${row[14] || ''}</td>`;
+             rowHTML += `<td data-label="Bike KM">${row[16] === 0 ? '0' : (row[16] || '')}</td>`;
+             rowHTML += `<td data-label="Remarks if Other Expense">${row[15] || ''}</td>`;
+             
+             const docUrl = row[18];
+             if (docUrl) {
+                 rowHTML += `<td style="text-align:center;" data-label="Link"><a href="${docUrl}" target="_blank" title="open File" style="color:var(--primary-color); display:inline-block; font-weight:600; text-decoration:none;"><span class="material-symbols-outlined" style="font-size:16px; vertical-align:middle;">open_in_new</span> open File</a></td>`;
+             } else {
+                 rowHTML += `<td style="text-align:center; color:var(--text-muted);" data-label="Link">-</td>`;
+             }
+         }
+         tr.innerHTML = rowHTML;
+         fragment.appendChild(tr);
+
+         sTravel += parseFloat(row[9]) || 0; sFood += parseFloat(row[10]) || 0;
+         sOther += parseFloat(row[11]) || 0; sEquip += parseFloat(row[12]) || 0; 
+         sMat += parseFloat(row[13]) || 0; sGst += parseFloat(row[19]) || 0;
+      });
+      
+      reportGridBody.appendChild(fragment);
+
+      if(isAdminUser) {
+          document.querySelectorAll('.edit-report-btn').forEach(btn => {
+             btn.addEventListener('click', (e) => openExpenseEditModal(e.currentTarget.getAttribute('data-index')));
+          });
+          btnAuditExpenses.disabled = false;
+          btnPredictCashFlow.disabled = false;
+          btnExportCSV.disabled = false;
+      }
+
+      document.getElementById('repCount').textContent = data.length;
+      document.getElementById('repGrandTotal').textContent = (sTravel + sFood + sOther + sEquip + sMat + sGst).toFixed(2);
+      document.getElementById('repTravel').textContent = sTravel.toFixed(2);
+      document.getElementById('repFood').textContent = sFood.toFixed(2);
+      document.getElementById('repOther').textContent = sOther.toFixed(2);
+      document.getElementById('repEquip').textContent = sEquip.toFixed(2);
+      document.getElementById('repMaterial').textContent = sMat.toFixed(2);
+      document.getElementById('repGst').textContent = sGst.toFixed(2);
+      
+      reportSummaryPanel.style.display = 'flex'; 
+      btnExportPDF.disabled = false;
+    }
+
+    function clearReport() {
+      filterEmployee.value = 'All Employees'; filterFromDate.value = ''; filterToDate.value = '';
+      activeFilters = {}; 
+      currentReportData = []; reportSummaryPanel.style.display = 'none'; 
+      btnExportPDF.disabled = true; 
+      if(isAdminUser) { btnAuditExpenses.disabled = true; btnPredictCashFlow.disabled = true; btnExportCSV.disabled = true; }
+      aiInsightContainer.style.display = 'none'; 
+      const colSpan = isAdminUser ? 20 : 17;
+      reportGridBody.innerHTML = `<tr><td colspan="${colSpan}" class="empty-state"><div class="empty-icon shadow-sm"><span class="material-symbols-outlined">data_usage</span></div>Configure period bounds and execute analysis.</td></tr>`;
+    }
+
+    function exportToPDF() {
+      const from = filterFromDate.value, to = filterToDate.value, empFilter = filterEmployee.value;
+      if (!from || !to) return showToast('Define period bounds.', 'error');
+
+      btnExportPDF.disabled = true;
+      btnExportPDF.querySelector('.loader').classList.remove('hidden');
+
+      google.script.run
+        .withSuccessHandler((res) => {
+          btnExportPDF.disabled = false;
+          btnExportPDF.querySelector('.loader').classList.add('hidden');
+          
+          if(res.success) {
+            showToast(`Report Compiled: ${res.name}`, 'success');
+            window.open(res.url, '_blank');
+          } else {
+            showToast(res.message, 'error');
+          }
+        })
+        .withFailureHandler((err) => {
+          btnExportPDF.disabled = false;
+          btnExportPDF.querySelector('.loader').classList.add('hidden');
+          showToast('Failed to generate PDF.', 'error');
+        })
+        .generateExpensePDF(loggedInUser, from, to, empFilter);
+    }
+    
+    function exportToCSV() {
+        if (!currentReportData || currentReportData.length === 0) {
+            return showToast('No records available to export.', 'warning');
+        }
+
+        let filteredData = currentReportData;
+        if (Object.keys(activeFilters).length > 0) {
+            filteredData = currentReportData.filter(row => {
+                for (const [colIdx, allowedValues] of Object.entries(activeFilters)) {
+                    let val = row[colIdx];
+                    val = (val === null || val === undefined || val === '') ? '(Blank)' : String(val).trim();
+                    if (!allowedValues.includes(val)) {
+                        return false;
+                    }
+                }
+                return true;
+            });
+        }
+
+        if (filteredData.length === 0) {
+            return showToast('No records available to export.', 'warning');
+        }
+
+        btnExportCSV.disabled = true;
+        btnExportCSV.querySelector('.btn-text').style.opacity = '0.5';
+        btnExportCSV.querySelector('.loader').classList.remove('hidden');
+
+        try {
+            const adminCols = [
+               { label: 'TIMESTAMP', idx: 1 }, { label: 'NAME', idx: 2 }, { label: 'TRAVEL DAY', idx: 3 },
+               { label: 'CUSTOMER NAME', idx: 4 }, { label: 'STARTING POINT', idx: 5 }, { label: 'ENDING POINT', idx: 6 },
+               { label: 'MODE OF TRAVEL', idx: 7 }, { label: 'LOCATION', idx: 8 }, { label: 'TRAVEL COST', idx: 9 },
+               { label: 'FOODING COST', idx: 10 }, { label: 'OTHER EXPENSE', idx: 11 }, { label: 'EQUIPMENT TRANS.', idx: 12 },
+               { label: 'MATERIAL PURCH.', idx: 13 }, { label: 'GST VALUE', idx: 19 }, { label: 'REMARKS', idx: 14 },
+               { label: 'BIKE KM', idx: 16 }, { label: 'REMARKS (OTHER)', idx: 15 }, { label: 'DOC', idx: 18 }
+            ];
+
+            const escapeCSV = (val) => {
+                if (val === null || val === undefined) return '""';
+                let str = String(val);
+                if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+                    str = '"' + str.replace(/"/g, '""') + '"';
+                }
+                return str;
+            };
+
+            let csvContent = '\uFEFF';
+            csvContent += adminCols.map(c => escapeCSV(c.label)).join(',') + '\r\n';
+
+            filteredData.forEach(row => {
+                const rowData = adminCols.map(c => escapeCSV(row[c.idx]));
+                csvContent += rowData.join(',') + '\r\n';
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+
+            const dateStr = new Date().toISOString().split('T')[0];
+            link.setAttribute("download", `Expense_Report_${dateStr}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            showToast('CSV Export successful.', 'success');
+        } catch (err) {
+            showToast('Failed to export CSV.', 'error');
+        } finally {
+            btnExportCSV.disabled = false;
+            btnExportCSV.querySelector('.btn-text').style.opacity = '1';
+            btnExportCSV.querySelector('.loader').classList.add('hidden');
+        }
+    }
+
+    /* Admin Modals */
+    const editExpenseModal = document.getElementById('editExpenseModal');
+    
+    function populateEditModalDropdowns() {
+        if(locationOptions.length > 0) document.getElementById('e_location').innerHTML = `<option value="" disabled selected>Select Location</option>` + locationOptions.map(o => `<option value="${o}">${o}</option>`).join('');
+        if(remarksOtherOptions.length > 0) document.getElementById('e_remarksOther').innerHTML = `<option value="">N/A</option>` + remarksOtherOptions.map(o => `<option value="${o}">${o}</option>`).join('') + `<option value="Custom Remarks" style="font-weight:bold; color:var(--primary-color);">&#43; Custom Remarks</option>`;
+    }
+
+    function openExpenseEditModal(arrayIndex) {
+        const data = currentReportData[arrayIndex];
+        
+        document.getElementById('editSheetRow').value = data[20]; 
+        document.getElementById('editSheetRow').setAttribute('data-array-index', arrayIndex);
+        document.getElementById('e_vehicleKm').value = data[16] || 0;
+        document.getElementById('e_vehicleCalcCost').value = data[17] || 0;
+        
+        const map = { 
+             e_name:2, e_travelDay:3, e_customer:4, e_start:5, e_end:6, e_mode:7, 
+             e_location:8, e_travelCost:9, e_foodingCost:10, e_otherExp:11, 
+             e_equip:12, e_mat:13, e_remarks:14, e_remarksOther:15, e_gstValue:19 
+         };
+
+        for (const [id, idx] of Object.entries(map)) { 
+             let val = data[idx] || (id.includes('Cost') || id.includes('Exp') || id.includes('equip') || id.includes('mat') || id.includes('gst') ? 0 : ''); 
+             const el = document.getElementById(id);
+             
+             // Inject custom option into modal dropdown if it doesn't exist yet
+             if (id === 'e_remarksOther' && el.tagName === 'SELECT' && val) {
+                 if (!Array.from(el.options).some(opt => opt.value === val)) {
+                     el.add(new Option(val, val), el.options[el.options.length - 1] || null);
+                 }
+             }
+             el.value = val;
+        }
+        
+        const oExp = document.getElementById('e_otherExp'), rOth = document.getElementById('e_remarksOther');
+        rOth.disabled = (parseFloat(oExp.value) || 0) <= 0;
+        oExp.addEventListener('input', () => { if((parseFloat(oExp.value) || 0) > 0) rOth.disabled = false; else { rOth.disabled = true; rOth.value = ''; }});
+        
+        const docUrl = data[18];
+        const docContainer = document.getElementById('e_currentDoc');
+        if(docUrl) {
+            docContainer.innerHTML = `<a href="${docUrl}" target="_blank" style="color:var(--primary-color); font-weight:600; text-decoration:none;"><span class="material-symbols-outlined" style="font-size:16px; vertical-align:middle;">open_in_new</span> open File</a>`;
+        } else {
+            docContainer.innerHTML = `<span style="color:var(--text-muted); font-style:italic;">No document attached</span>`;
+        }
+        document.getElementById('e_newDoc').value = '';
+        editExpenseModal.classList.add('show');
+    }
+
+    document.getElementById('e_remarksOther').addEventListener('change', (e) => {
+        if(e.target.value === 'Custom Remarks') openCustomRemarkModal(e.target);
+    });
+
+    document.getElementById('closeEditExpenseModal').addEventListener('click', () => editExpenseModal.classList.remove('show'));
+
+    document.getElementById('editExpenseForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('btnSaveExpenseEdit');
+
+        const tCost = parseFloat(document.getElementById('e_travelCost').value) || 0;
+        const fCost = parseFloat(document.getElementById('e_foodingCost').value) || 0;
+        const oCost = parseFloat(document.getElementById('e_otherExp').value) || 0;
+        const eCost = parseFloat(document.getElementById('e_equip').value) || 0;
+        const mCost = parseFloat(document.getElementById('e_mat').value) || 0;
+        const bCost = parseFloat(document.getElementById('e_vehicleCalcCost').value) || 0;
+        const gCost = parseFloat(document.getElementById('e_gstValue').value) || 0;
+
+        if ((tCost + fCost + oCost + eCost + mCost + bCost + gCost) <= 0) {
+            return showToast('The updated record must contain at least one valid expense > 0.', 'error');
+        }
+
+        const arrayIndex = document.getElementById('editSheetRow').getAttribute('data-array-index');
+        const existingDocUrl = currentReportData[arrayIndex][18];
+        const newDocInput = document.getElementById('e_newDoc');
+
+        if (gCost > 0 && !existingDocUrl && newDocInput.files.length === 0) { 
+            return showToast('Document upload is mandatory when GST Value is greater than 0.', 'error');
+        }
+
+        btn.disabled = true; btn.querySelector('.loader').classList.remove('hidden');
+        
+        const rowData = {
+            name: document.getElementById('e_name').value, travelDay: document.getElementById('e_travelDay').value,
+            customerName: document.getElementById('e_customer').value, startingPoint: document.getElementById('e_start').value,
+            endingPoint: document.getElementById('e_end').value, modeOfTravel: document.getElementById('e_mode').value,
+            location: document.getElementById('e_location').value, travelCost: document.getElementById('e_travelCost').value,
+            foodingCost: document.getElementById('e_foodingCost').value, otherExpense: document.getElementById('e_otherExp').value,
+            equipmentTransport: document.getElementById('e_equip').value, materialPurchase: document.getElementById('e_mat').value,
+            gstValue: document.getElementById('e_gstValue').value,
+            remarks: document.getElementById('e_remarks').value, remarksOther: document.getElementById('e_remarksOther').value,
+            vehicleKm: document.getElementById('e_vehicleKm').value,
+            vehicleCalcCost: document.getElementById('e_vehicleCalcCost').value,
+            existingDocUrl: existingDocUrl
+        };
+
+        if (newDocInput.files.length > 0) {
+            const file = newDocInput.files[0];
+            if(file.size > 5 * 1024 * 1024) {
+                showToast("File size must be under 5MB.", "error");
+                btn.disabled = false; btn.querySelector('.loader').classList.add('hidden');
+                return;
+            }
+            rowData.newDocument = {
+                filename: file.name,
+                mimeType: file.type,
+                data: await getBase64(file)
+            };
+        }
+
+        google.script.run
+            .withSuccessHandler((res) => {
+                btn.disabled = false; btn.querySelector('.loader').classList.add('hidden');
+                if(res.success) { showToast('Registry updated.', 'success'); editExpenseModal.classList.remove('show'); fetchReportData(); } else showToast(res.message, 'error');
+            }).withFailureHandler(() => {
+                btn.disabled = false; btn.querySelector('.loader').classList.add('hidden'); showToast('Execution failed.', 'error');
+            }).updateExpenseRecord(loggedInUser, document.getElementById('editSheetRow').value, rowData);
+    });
+
+    /* User Management Module */
+    const userModal = document.getElementById('userModal');
+
+    function loadUsersList() {
+        const uBody = document.getElementById('usersGridBody');
+        uBody.innerHTML = '<tr><td colspan="4" class="empty-state"><span class="loader" style="border-color:var(--primary-color); border-bottom-color:transparent;"></span></td></tr>';
+        
+        google.script.run.withSuccessHandler(res => {
+            if(res.success) {
+                uBody.innerHTML = '';
+                if(res.users.length === 0) return uBody.innerHTML = '<tr><td colspan="4" class="empty-state"><div class="empty-icon shadow-sm"><span class="material-symbols-outlined">group_off</span></div>Registry empty.</td></tr>';
+                const frag = document.createDocumentFragment();
+                res.users.forEach(u => {
+                    const isSuper = u.isSuper;
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td data-label="USER ID">${u.name} ${isSuper ? '<span style="font-size:10px; color:var(--primary-color); background:var(--primary-light); padding:3px 8px; border-radius:12px; margin-left:8px; font-weight:700;">SUPER ADMIN</span>' : ''}</td>
+                        <td data-label="CREDENTIAL"><span style="letter-spacing: 2px; color:var(--text-muted); font-family:monospace;">${u.password || 'Not Set'}</span></td>
+                        <td data-label="REGISTERED EMAIL">${u.email || '<span style="color:var(--text-muted); font-style:italic;">Not Configured</span>'}</td>
+                        <td class="col-action" data-label="ACTIONS">
+                            <button class="icon-btn text-primary shadow-btn-custom" style="border: 1px solid var(--primary-light);" onclick="openUserModal('${u.name}', '${u.password}', '${u.email}', ${u.row})" title="Edit">
+                                <span class="material-symbols-outlined">edit</span>
+                            </button>
+                            ${!isSuper ? `<button class="icon-btn text-danger shadow-btn-custom" style="border: 1px solid #fecdd3; margin-left:4px;" onclick="deleteUserRow(${u.row}, '${u.name}')" title="Revoke"><span class="material-symbols-outlined">person_remove</span></button>` : ''}
+                        </td>
+                    `;
+                    frag.appendChild(tr);
+                });
+                uBody.appendChild(frag);
+            } else showToast(res.message, 'error');
+        }).fetchUsers(loggedInUser);
+    }
+
+    document.getElementById('btnAddUser').addEventListener('click', () => openUserModal('', '', '', ''));
+    document.getElementById('closeUserModal').addEventListener('click', () => userModal.classList.remove('show'));
+    document.getElementById('btnCancelUser').addEventListener('click', () => userModal.classList.remove('show'));
+
+    window.openUserModal = function(name, password, email, row) {
+        document.getElementById('u_row').value = row || '';
+        document.getElementById('u_name').value = name || '';
+        document.getElementById('u_password').value = password || '';
+        document.getElementById('u_email').value = email || '';
+
+        const typeGroup = document.getElementById('u_type_group');
+        const typeSelect = document.getElementById('u_type');
+        const emailReqIndicator = document.getElementById('u_email_req_indicator');
+        const emailInput = document.getElementById('u_email');
+        
+        if (row) {
+            typeGroup.style.display = 'none';
+            typeSelect.removeAttribute('required');
+            emailReqIndicator.style.display = 'none';
+            emailInput.removeAttribute('required');
+        } else {
+            typeGroup.style.display = 'block';
+            typeSelect.setAttribute('required', 'required');
+            typeSelect.value = '';
+            emailReqIndicator.style.display = 'inline';
+            emailInput.setAttribute('required', 'required');
+        }
+
+        document.getElementById('userModalTitle').textContent = row ? 'Modify Provisioned Profile' : 'Provision Access Profile';
+        userModal.classList.add('show');
+    };
+
+    document.getElementById('userForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('btnSaveUser');
+        btn.disabled = true; btn.querySelector('.loader').classList.remove('hidden');
+
+        const payload = {
+            row: document.getElementById('u_row').value,
+            name: document.getElementById('u_name').value,
+            password: document.getElementById('u_password').value,
+            email: document.getElementById('u_email').value,
+            type: document.getElementById('u_type') ? document.getElementById('u_type').value : ''
+        };
+
+        google.script.run
+            .withSuccessHandler(res => {
+                btn.disabled = false; btn.querySelector('.loader').classList.add('hidden');
+                if(res.success) {
+                    showToast(res.message, res.message.includes('failed') ? 'error' : 'success'); 
+                    userModal.classList.remove('show'); loadUsersList();
+                    
+                    google.script.run.withSuccessHandler(empList => {
+                       const dl = document.getElementById('delegateEmployee');
+                       const fl = document.getElementById('filterEmployee');
+                       const dVal = dl.value;
+                       const fVal = fl.value;
+                       dl.innerHTML = '<option value="" disabled selected>Select Profile...</option>' + empList.map(e => `<option value="${e}">${e}</option>`).join('');
+                       fl.innerHTML = '<option value="All Employees">System Global</option>' + empList.map(e => `<option value="${e}">${e}</option>`).join('');
+                       dl.value = dVal || "";
+                       fl.value = fVal || "All Employees";
+                    }).getEmployeeList(loggedInUser);
+
+                } else showToast(res.message, 'error');
+            })
+            .saveUser(loggedInUser, payload);
+    });
+
+    window.deleteUserRow = function(row, name) {
+        if(!confirm(`WARNING: You are about to revoke access for ${name}. Proceed?`)) return;
+        google.script.run.withSuccessHandler(res => {
+            if(res.success) { showToast(res.message, 'success'); loadUsersList(); } else showToast(res.message, 'error');
+        }).deleteUser(loggedInUser, row);
+    };
+
+    function showToast(message, type = 'success') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type} shadow-modal-custom table-dark-border`;
+      toast.innerHTML = `<span class="material-symbols-outlined">${type === 'success' ? 'check_circle' : (type === 'error' ? 'error' : 'warning')}</span> ${message}`;
+      
+      container.appendChild(toast);
+      setTimeout(() => toast.classList.add('show'), 10);
+      setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 300); }, 5000); 
+    }
+  });
+</script>
