@@ -15,7 +15,7 @@ var DROPDOWN_SHEET_NAME = 'Sheet2';
 var PDF_FOLDER_ID = '1cUpGph5b_ANuQT0DcktC9r0nm5huHBLV'; 
 var SCREENSHOT_FOLDER_NAME = 'ExpenseScreenshots';
 
-var GEMINI_API_KEY = 'AQ.Ab8RN6LjiaPsUHDIZnslZoD71n43SGCrLoWf3C1zEvckoL3qKw'; 
+var GEMINI_API_KEY = 'Your_Gemini_API_KEY'; 
 
 var SUPER_ADMIN_USERNAMES = [
   'JEET SENGUPTA', 
